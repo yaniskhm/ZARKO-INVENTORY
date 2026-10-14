@@ -3060,7 +3060,11 @@ for(i=0;i<8;i++)for(j=3;j+1;j--){var b=(h[i]>>(j*8))&255;r+=(b<16?0:'')+b.toStri
 const u8=s=>unescape(encodeURIComponent(s));
 function hash(salt,pw){const p=u8(pw),s=u8(salt);let h=sha256(s+':'+p);for(let i=0;i<3000;i++)h=sha256(h+s+p);return h;}
 const rnd=()=>Array.from(crypto.getRandomValues(new Uint8Array(12)),b=>b.toString(16).padStart(2,'0')).join('');
-const CR={u:'yanis',s:'1f936173900c478f19ee2996',h:'cc9ba2adc2e8bb8ef1fbbd9857744ffc31568fa646bcf8a24640c5bdf4171dfd'}; /* compte créateur (hash uniquement) */
+const CR={u:'yanis'}; /* identifiant créateur : son mot de passe est choisi au premier lancement et n'est gardé que sur cet appareil (rien de secret dans le code) */
+const creds=()=>{try{return JSON.parse(localStorage.getItem('zk_creator'));}catch(e){return null;}};
+const subtle=window.crypto&&crypto.subtle;
+async function hashA(salt,pw){if(!subtle)return hash(salt,pw);const k=await subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveBits']);const b=await subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:new TextEncoder().encode(salt),iterations:210000},k,256);return 'p1:'+Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).join('');}
+async function same(salt,pw,stored){return stored&&stored.startsWith('p1:')?(await hashA(salt,pw))===stored:hash(salt,pw)===stored;}
 
 /* Session & droits */
 const sess=()=>{try{return JSON.parse(sessionStorage.getItem('zk_sess'));}catch(e){return null;}};
@@ -3073,14 +3077,17 @@ const _s2=saveState;saveState=function(){ensureAdmin();_s2();};
 /* Écran de connexion (visible dès l'ouverture) */
 document.body.insertAdjacentHTML('beforeend',`<div id="zk-login" class="fixed inset-0 z-[300] bg-slate-950 flex items-center justify-center p-4"><form id="zk-lf" class="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-4 shadow-2xl"><div class="text-center"><div class="mx-auto w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-400 flex items-center justify-center text-white font-bold text-xl mb-3">Z</div><h2 class="text-white font-bold text-xl">ZARKO ERP</h2><p id="zk-hint" class="text-slate-400 text-xs mt-1">Connexion requise</p></div><input id="zk-lu" autocomplete="username" placeholder="Nom d'utilisateur" class="${FLD}"><input id="zk-lp" type="password" autocomplete="current-password" placeholder="Mot de passe" class="${FLD}"><p id="zk-le" class="text-rose-400 text-xs min-h-[1rem]"></p><button class="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-500">Se connecter</button></form></div>`);
 let fails=0,lock=0;
-$('#zk-lf').onsubmit=e=>{e.preventDefault();const u=$('#zk-lu').value.trim().toLowerCase(),p=$('#zk-lp').value,err=$('#zk-le');
+$('#zk-lf').onsubmit=async e=>{e.preventDefault();const u=$('#zk-lu').value.trim().toLowerCase(),p=$('#zk-lp').value,err=$('#zk-le');
 if(Date.now()<lock){err.textContent='Trop de tentatives. Patientez 30 secondes.';return;}
 let s=null;
-if(u===CR.u&&hash(CR.s,p)===CR.h)s={id:'creator',name:'Yanis',role:'Créateur',creator:true};
-else{const x=(appState.users||[]).find(x=>x.hash&&x.status==='Actif'&&(x.username||x.email||'').toLowerCase()===u);if(x&&hash(x.salt,p)===x.hash)s={id:x.id,name:x.name,role:x.role};}
+const cs=creds();
+if(u===CR.u&&!cs){if(p.length<10){err.textContent='Premier lancement : choisissez un mot de passe de 10 caractères minimum.';return;}const sl=rnd();localStorage.setItem('zk_creator',JSON.stringify({s:sl,h:await hashA(sl,p)}));s={id:'creator',name:'Yanis',role:'Créateur',creator:true};}
+else if(u===CR.u&&cs&&await same(cs.s,p,cs.h))s={id:'creator',name:'Yanis',role:'Créateur',creator:true};
+else{const x=(appState.users||[]).find(x=>x.hash&&x.status==='Actif'&&(x.username||x.email||'').toLowerCase()===u);if(x&&await same(x.salt,p,x.hash)){s={id:x.id,name:x.name,role:x.role};if(subtle&&!String(x.hash).startsWith('p1:')){x.salt=rnd();x.hash=await hashA(x.salt,p);saveState();}}}
 if(!s){if(++fails>=5){lock=Date.now()+30000;fails=0;}err.textContent="Nom d'utilisateur ou mot de passe incorrect.";$('#zk-lp').value='';return;}
 fails=0;err.textContent='';sessionStorage.setItem('zk_sess',JSON.stringify(s));start(s);};
 
+if(!creds()&&$('#zk-hint'))$('#zk-hint').textContent='Premier lancement : identifiant « yanis » + choisissez un mot de passe (10 caractères min.).';
 function refreshUi(){const s=sess(),adm=isAdmin();let c=$('#zk-chip');
 if(!c){c=document.createElement('div');c.id='zk-chip';c.className='flex items-center gap-2';const an=$('button[onclick="zkReports()"]').parentNode;an.parentNode.insertBefore(c,an);}
 c.innerHTML=`<span class="hidden sm:block text-right leading-tight"><span class="block text-xs font-semibold text-white">${s.name}</span><span class="block text-[10px] text-indigo-400">${s.role}</span></span><button type="button" onclick="zkLogout()" title="Se déconnecter" class="${BTN}"><i data-lucide="log-out" class="w-4 h-4"></i></button>`;
@@ -3093,9 +3100,9 @@ window.zkLogout=()=>{sessionStorage.removeItem('zk_sess');$('#zk-login').style.d
 /* Première connexion : définir le mot de passe de l'administrateur puis déconnexion automatique */
 function adminSetup(){const ov=document.createElement('div');ov.className='fixed inset-0 z-[250] flex items-center justify-center p-4 modal-backdrop';
 ov.innerHTML=`<form class="w-full max-w-sm rounded-xl bg-slate-900 border border-slate-700 p-5 space-y-3"><h3 class="font-bold text-white">Mot de passe de l'administrateur</h3><p class="text-xs text-slate-400">Le compte « administrateur » vient d'être créé. Choisissez son mot de passe (6 caractères minimum). Vous serez ensuite déconnecté pour vous reconnecter avec ce compte.</p><input type="password" data-a autocomplete="new-password" placeholder="Mot de passe" class="${FLD}"><input type="password" data-b autocomplete="new-password" placeholder="Confirmer le mot de passe" class="${FLD}"><p data-e class="text-rose-400 text-xs min-h-[1rem]"></p><button class="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-500">Enregistrer et se déconnecter</button></form>`;
-document.body.appendChild(ov);ov.querySelector('form').onsubmit=e=>{e.preventDefault();const a=ov.querySelector('[data-a]').value,b=ov.querySelector('[data-b]').value,er=ov.querySelector('[data-e]');
+document.body.appendChild(ov);ov.querySelector('form').onsubmit=async e=>{e.preventDefault();const a=ov.querySelector('[data-a]').value,b=ov.querySelector('[data-b]').value,er=ov.querySelector('[data-e]');
 if(a.length<6){er.textContent='6 caractères minimum.';return;}if(a!==b){er.textContent='Les deux mots de passe sont différents.';return;}
-const ad=appState.users.find(u=>u.main);ad.salt=rnd();ad.hash=hash(ad.salt,a);saveState();ov.remove();zkLogout();
+const ad=appState.users.find(u=>u.main);ad.salt=rnd();ad.hash=await hashA(ad.salt,a);saveState();ov.remove();zkLogout();
 $('#zk-hint').textContent='Reconnectez-vous avec l\'identifiant « administrateur »';$('#zk-lu').value='administrateur';$('#zk-lp').focus();ts('Mot de passe administrateur enregistré.');};}
 
 /* Formulaire utilisateur : identifiant + mot de passe (champs sans name : jamais envoyés en clair au stockage) */
@@ -3112,7 +3119,7 @@ if((!ex||!ex.hash)&&(!un||pw.length<6)){ts('Nom d\'utilisateur et mot de passe (
 if(pw&&pw.length<6){ts('Mot de passe : 6 caractères minimum.');return;}
 const n=appState.users.length;_hs(ev);
 const rec=ed?appState.users.find(u=>u.id===ed):(appState.users.length>n?appState.users[appState.users.length-1]:null);
-if(rec){if(un&&!rec.main)rec.username=un;if(pw){rec.salt=rnd();rec.hash=hash(rec.salt,pw);}saveState();renderCurrentTab();}};
+if(rec){(async()=>{if(un&&!rec.main)rec.username=un;if(pw){rec.salt=rnd();rec.hash=await hashA(rec.salt,pw);}saveState();renderCurrentTab();})();}};
 
 /* Droits : seul l'administrateur gère/supprime les utilisateurs, vide les données, restaure une sauvegarde */
 const _sw=switchTab;switchTab=function(t){if(t==='users'&&!isAdmin()){ts('Accès réservé à l\'administrateur.');return;}_sw(t);};
