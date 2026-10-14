@@ -1,7 +1,8 @@
-const V='zarko-v1';
+const V='zarko-v3';
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(['./','./index.html','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'])).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==V).map(x=>caches.delete(x)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',e=>{const r=e.request;if(r.method!=='GET')return;
+if(new URL(r.url).hostname.endsWith('supabase.co'))return;
 const put=res=>{if(res&&(res.ok||res.type==='opaque')){const c=res.clone();caches.open(V).then(x=>x.put(r,c));}return res;};
 if(r.mode==='navigate'){e.respondWith(fetch(r).then(put).catch(()=>caches.match('./index.html')));return;}
 e.respondWith(caches.match(r).then(m=>{const n=fetch(r).then(put).catch(()=>m);return m||n;}));});
