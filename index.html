@@ -188,9 +188,9 @@
             <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
             <input id="global-search" type="text" oninput="handleGlobalSearch(this.value)" placeholder="Recherche produit/SKU..." class="pl-9 pr-4 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-400 focus:outline-none focus:border-indigo-500 w-48 lg:w-64">
           </div>
-          <button onclick="resetDataToDefault()" title="Vider toutes les données" class="p-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 text-xs flex items-center gap-1.5">
-            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
-            <span class="hidden md:inline">Vider les données</span>
+          <button onclick="zkLogout()" title="Se déconnecter" class="p-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-rose-600/80 hover:border-rose-500 text-xs flex items-center gap-1.5">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+            <span class="hidden sm:inline">Déconnexion</span>
           </button>
           <div class="h-6 w-px bg-slate-800"></div>
           <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -920,15 +920,6 @@
       ov.querySelector('[data-no]').onclick = () => ov.remove();
       ov.querySelector('[data-yes]').onclick = () => { ov.remove(); onYes(); };
       document.body.appendChild(ov);
-    }
-
-    function resetDataToDefault() {
-      askConfirm('Vider TOUTES les données (dépôts, produits, clients, documents…) ? Cette action est définitive.', () => {
-        appState = JSON.parse(JSON.stringify(DEFAULT_DATA));
-        saveState();
-        renderCurrentTab();
-        showToast('Toutes les données ont été supprimées.');
-      }, 'Tout vider');
     }
 
     function switchTab(tabId) {
@@ -3031,7 +3022,7 @@ if(!e.altKey)return;const go={d:'dashboard',p:'products',c:'clients',l:'bons-liv
 if(go){e.preventDefault();switchTab(go);}else if(e.key.toLowerCase()==='n'&&currentTab!=='dashboard'){e.preventDefault();try{openModal(currentTab);}catch(x){}}});
 
 /* Boutons de l'en-tête */
-const rb=document.querySelector('button[onclick="resetDataToDefault()"]');
+const rb=document.querySelector('button[onclick="zkLogout()"]');
 if(rb){const w=document.createElement('div');w.className='flex items-center gap-2';
 w.innerHTML=`<button type="button" onclick="zkReports()" title="Rapports" class="${BTN}"><i data-lucide="bar-chart-3" class="w-4 h-4"></i></button><button type="button" onclick="zkExport()" title="Sauvegarder (JSON)" class="${BTN}"><i data-lucide="download" class="w-4 h-4"></i></button><label title="Restaurer une sauvegarde" class="${BTN} cursor-pointer"><i data-lucide="upload" class="w-4 h-4"></i><input type="file" accept=".json,application/json" class="hidden" onchange="zkImport(this)"></label>`;
 rb.parentNode.insertBefore(w,rb);}
@@ -3131,8 +3122,8 @@ finally{btn.disabled=false;btn.textContent='Se connecter';$('#zk-lp').value='';}
 
 function refreshUi(){const s=sess(),adm=isAdmin();let c=$('#zk-chip');
 if(!c){c=document.createElement('div');c.id='zk-chip';c.className='flex items-center gap-2';const an=$('button[onclick="zkReports()"]').parentNode;an.parentNode.insertBefore(c,an);}
-c.innerHTML=`<span class="hidden sm:block text-right leading-tight"><span class="block text-xs font-semibold text-white">${esc(String(s.name||''))}</span><span class="block text-[10px] text-indigo-400">${esc(String(s.role||''))}</span></span><span id="zk-sync" class="text-[10px]"></span><button type="button" onclick="zkLogout()" title="Se déconnecter" class="${BTN}"><i data-lucide="log-out" class="w-4 h-4"></i></button>`;
-[['#nav-users'],['button[onclick="resetDataToDefault()"]'],['label[title="Restaurer une sauvegarde"]']].forEach(([q])=>{const e=$(q);if(e)e.style.display=adm?'':'none';});lucide.createIcons();stat(dirty?'run':'ok');}
+c.innerHTML=`<span class="hidden sm:block text-right leading-tight"><span class="block text-xs font-semibold text-white">${esc(String(s.name||''))}</span><span class="block text-[10px] text-indigo-400">${esc(String(s.role||''))}</span></span><span id="zk-sync" class="text-[10px]"></span>`;
+[['#nav-users'],['label[title="Restaurer une sauvegarde"]']].forEach(([q])=>{const e=$(q);if(e)e.style.display=adm?'':'none';});lucide.createIcons();stat(dirty?'run':'ok');}
 function start(s){$('#zk-login').style.display='none';$('#zk-lp').value='';refreshUi();switchTab('dashboard');}
 window.zkLogout=async()=>{if(dirty)await push();
 const out=async()=>{leaving=true;canSync=false;try{await sb.auth.signOut();}catch(e){}sessionStorage.removeItem('zk_sess');['zarko_erp_vierge_v1','zk_rev','zk_dirty'].forEach(k=>LSset(k,null));location.reload();};
@@ -3146,7 +3137,6 @@ const _hs=handleFormSubmit;handleFormSubmit=function(ev){if(activeModalEntity===
 /* Droits : seul l'administrateur gère/supprime les utilisateurs, vide les données, restaure une sauvegarde */
 const _sw=switchTab;switchTab=function(t){if(t==='users'&&!isAdmin()){ts('Accès réservé à l\'administrateur.');return;}_sw(t);};
 const _de=deleteEntity;deleteEntity=function(k,id){if(k==='users'){if(!isAdmin()){ts('Seul l\'administrateur peut supprimer un utilisateur.');return;}const s=sess();if(s&&s.id===id){ts('Vous ne pouvez pas supprimer votre propre compte.');return;}}_de(k,id);};
-const _rs=resetDataToDefault;resetDataToDefault=function(){if(!isAdmin()){ts('Réservé à l\'administrateur.');return;}_rs();};
 const _zi=window.zkImport;window.zkImport=function(i){if(!isAdmin()){i.value='';ts('Réservé à l\'administrateur.');return;}_zi(i);};
 
 /* Reprise de session au chargement */
